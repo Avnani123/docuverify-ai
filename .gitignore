@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Environment variables / Secrets
+.env
+
+# Local file uploads bucket
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Miscellaneous
+.DS_Store
