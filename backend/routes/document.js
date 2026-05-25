@@ -1,45 +1,54 @@
-// backend/routes/documents.js
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
 
-// Simulated MongoDB Document Schema array for local verification storage
-// (If using Mongoose, change this to a model save)
-let mockDatabaseLogs = [];
-
-router.post('/upload', (req, res) => {
-  try {
-    const { fileName, fileSize, userId, userName } = req.body;
-
-    if (!fileName) {
-      return res.status(400).json({ message: "No file cataloged." });
+// Configure disk storage
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        cb(null, `DOC-${Date.now()}${path.extname(file.originalname)}`);
     }
+});
 
-    // Creating a mock verification entry simulating OCR engine behavior
-    const newDoc = {
-      id: 'DOC-' + Math.floor(1000 + Math.random() * 9000),
-      fileName,
-      fileSize: (fileSize / 1024).toFixed(1) + ' KB',
-      submittedBy: userName || 'Anonymous Submitter',
-      timestamp: new Date().toLocaleString(),
-      status: Math.random() > 0.15 ? 'Verified' : 'Flagged', // Simulating an authentication algorithm
-      confidenceScore: Math.floor(75 + Math.random() * 24) + '%'
-    };
+const upload = multer({ storage: storage });
 
-    mockDatabaseLogs.unshift(newDoc); // Save to the top of our log pipeline
+// Refactored upload endpoint
+router.post('/upload', upload.single('document'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded.' });
+        }
 
-    res.status(201).json({
-      message: "Document pipeline processing completed successfully.",
-      document: newDoc,
-      allLogs: mockDatabaseLogs
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Internal Server Processing Error." });
+        // 1. This is where your AI/Extraction logic will live
+        // 2. Save the document metadata into your MongoDB collection here
+
+        res.status(200).json({
+            docId: req.file.filename.split('.')[0],
+            fileName: req.file.originalname,
+            status: 'Verified'
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
+// PUT /api/documents/:id/status
+router.put('/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body; // Expecting 'Verified' or 'Flagged'
+    
+    const updatedDoc = await Document.findByIdAndUpdate(
+      req.params.id, 
+      { status }, 
+      { new: true }
+    );
+    
+    if (!updatedDoc) return res.status(404).json({ message: 'Document not found' });
+    res.json(updatedDoc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
-
-// Fetch all pipeline entries for the System Auditor dashboard
-router.get('/logs', (req, res) => {
-  res.json(mockDatabaseLogs);
-});
-
 module.exports = router;

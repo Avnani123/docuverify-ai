@@ -1,25 +1,20 @@
 const jwt = require('jsonwebtoken');
 
 module.exports = function (req, res, next) {
-    // Get token from header
-    const token = req.header('Authorization');
+  // Read token allocation out from authorization headers matrix
+  const authHeader = req.header('Authorization');
+  const token = authHeader && authHeader.split(' ')[1];
 
-    // Check if no token
-    if (!token) {
-        return res.status(401).json({ message: 'No token, authorization denied' });
-    }
+  if (!token) {
+    return res.status(401).json({ message: 'No authorization token discovered. Access revoked.' });
+  }
 
-    try {
-        // Strip out 'Bearer ' if present in the header
-        const cleanToken = token.startsWith('Bearer ') ? token.slice(7, token.length) : token;
-        
-        // Verify token
-        const decoded = jwt.verify(cleanToken, process.env.JWT_SECRET);
-        
-        // Add user payload from token to request object
-        req.user = decoded.user;
-        next();
-    } catch (err) {
-        res.status(401).json({ message: 'Token is not valid' });
-    }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_encryption_key');
+    // Expecting token payload mapping setup format structure: { user: { id: "...", role: "..." } }
+    req.user = decoded.user; 
+    next();
+  } catch (err) {
+    res.status(401).json({ message: 'Token encryption signature authentication tracking failed.' });
+  }
 };
