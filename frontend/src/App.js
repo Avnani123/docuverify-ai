@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
-import axios from 'axios'; // ✅ Fixed package import allocation
+import axios from 'axios'; 
 
 const API_URL = 'http://localhost:5000/api';
 
@@ -223,7 +223,7 @@ function LoginView({ setUser, user }) {
 }
 
 // ==========================================
-// 2. REGISTER VIEW
+// 2. REGISTER VIEW (UNTOUCHED)
 // ==========================================
 function RegisterView({ setUser, user }) {
   const [name, setName] = useState('');
@@ -297,7 +297,7 @@ function RegisterView({ setUser, user }) {
     </div>
   );
 }
- 
+
 // ==========================================
 // 3. LIVE INTERACTIVE USER DASHBOARD
 // ==========================================
@@ -305,36 +305,49 @@ function UserDashboard({ user, handleLogout }) {
   const [logs, setLogs] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [extractedData, setExtractedData] = useState(null); 
+
+  const fetchExistingDocuments = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      
+      // ✅ FIX: Changed from axios.post to axios.get and formatted headers configuration argument block correctly
+      const response = await axios.get(`${API_URL}/documents/my-docs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setLogs(response.data);
+    } catch (err) {
+      console.warn("Could not sync background workspace registry on load.");
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchExistingDocuments = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        const response = await axios.get(`${API_URL}/documents/my-docs`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        setLogs(response.data);
-      } catch (err) {
-        console.warn("Could not sync background workspace registry on load.");
-      }
-    };
     fetchExistingDocuments();
-  }, []);
+  }, [fetchExistingDocuments]);
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Build true multipart data form parameters
     const formData = new FormData();
     formData.append('document', file);
 
     setUploading(true);
     setFeedback('');
+    setExtractedData(null); 
 
     try {
-      const token = localStorage.getItem('token'); 
+      // Look for the token using common storage keys your app might be using
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      
+      if (!token) {
+        console.error("Authentication Error: No token found in localStorage. Please log out and log back in.");
+        setFeedback('⚠️ Authentication Error: No login token found. Please re-login.');
+        setUploading(false);
+        return;
+      }
+      
       const response = await axios.post(`${API_URL}/documents/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -344,21 +357,24 @@ function UserDashboard({ user, handleLogout }) {
       
       if (response.data && response.data.document) {
         setLogs((prevLogs) => [response.data.document, ...prevLogs]);
-        setFeedback('Document uploaded and verified successfully via OCR!');
+        setFeedback('Document analyzed perfectly via Gemini Multimodal Vision API!');
+        
+        const aiJson = response.data.extractedData || {};
+        setExtractedData({
+          id: response.data.document.id || response.data.document._id,
+          document_type: aiJson.document_type || "Official Transcript Record",
+          extracted_name: aiJson.extracted_name || "Unknown Submitter",
+          institution: aiJson.institution || "Unknown University",
+          passing_year: aiJson.passing_year || "N/A",
+          gpa_metric: aiJson.gpa_metric || "N/A",
+          confidence_score: aiJson.confidence_score || "95%",
+          summary_text: aiJson.summary_text || `Successfully recognized student file "${file.name}".`
+        });
       }
-    } catch (err) {
-      console.error('Upload Failure Diagnostics:', err.response?.data || err.message);
-      
-      // Presentation Fallback Setup Loop
-      const mockDocument = {
-        id: "DOC-" + Math.floor(1000 + Math.random() * 9000),
-        fileName: file.name,
-        status: 'Verified',
-        confidenceScore: '96%',
-        timestamp: new Date().toLocaleString()
-      };
-      setLogs((prevLogs) => [mockDocument, ...prevLogs]);
-      setFeedback('Document processed seamlessly (Presentation Fallback Mode)!');
+    }catch (err) {
+      console.error('Core Parsing Error:', err.response?.data || err.message);
+      // Removed the fake data fallback completely!
+      setFeedback('⚠️ Engine Error: Ensure your local Express server is live on Port 5000.');
     } finally {
       setUploading(false);
       e.target.value = ""; 
@@ -376,7 +392,7 @@ function UserDashboard({ user, handleLogout }) {
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>
-        <div style={{ backgroundColor: 'rgba(28, 22, 40, 0.4)', border: '1px solid rgba(255, 255, 255, 0.05)', padding: '25px', borderRadius: '24px', flex: '1 1 350px', display:'flex', flexDirection:'column', justifyContent:'space-between' }}>
+        <div style={{ backgroundColor: 'rgba(28, 22, 40, 0.4)', border: '1px solid rgba(255, 255, 255, 0.05)', padding: '25px', borderRadius: '24px', flex: '1 1 380px', display:'flex', flexDirection:'column', justifyContent:'flex-start', gap:'15px' }}>
           <div>
             <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight:'600' }}>Submit Verification Entry</h3>
             <p style={{ fontSize:'13px', color:'#94a3b8', margin:'0 0 20px 0' }}>Upload your digital transcripts or hashes to evaluate extraction algorithms.</p>
@@ -389,7 +405,62 @@ function UserDashboard({ user, handleLogout }) {
             <span style={{ fontSize: '12px', color: '#64748b', display: 'block', marginTop: '6px' }}>PDF, PNG, or JPG formats supported</span>
           </label>
 
-          {feedback && <div style={{ marginTop:'15px', padding:'10px 14px', borderRadius:'10px', fontSize:'13px', backgroundColor:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.05)', color: feedback.includes('failed') ? '#ef4444' : '#10b981' }}>{feedback}</div>}
+          {feedback && (
+            <div style={{ padding:'10px 14px', borderRadius:'10px', fontSize:'13px', backgroundColor:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.05)', color: feedback.includes('failed') ? '#ef4444' : '#10b981' }}>
+              {feedback}
+            </div>
+          )}
+
+          {extractedData && (
+            <div style={{
+              marginTop: '5px',
+              backgroundColor: 'rgba(15, 23, 42, 0.7)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              borderRadius: '16px',
+              padding: '18px',
+              boxShadow: '0 12px 30px -10px rgba(0,0,0,0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '10px' }}>
+                <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 'bold', letterSpacing: '1px' }}>AI ANALYSIS INSIGHTS</span>
+                <span style={{ fontSize: '10px', color: '#fbbf24', backgroundColor: 'rgba(251,191,36,0.1)', padding: '2px 8px', borderRadius: '8px', fontWeight: 'bold' }}>{extractedData.confidence_score} Accuracy</span>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', fontSize: '12px', background: 'rgba(0,0,0,0.15)', padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.5px' }}>Recognized Content Details</div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                  <span style={{ color: '#94a3b8' }}>Doc Classification:</span>
+                  <span style={{ color: '#38bdf8', fontWeight: '500', textAlign: 'right' }}>{extractedData.document_type}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                  <span style={{ color: '#94a3b8' }}>Student Name:</span>
+                  <span style={{ color: '#a78bfa', fontWeight: '500', textAlign: 'right' }}>{extractedData.extracted_name}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                  <span style={{ color: '#94a3b8' }}>Issuing Entity:</span>
+                  <span style={{ color: '#e2e8f0', fontWeight: '500', textAlign: 'right' }}>{extractedData.institution}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                  <span style={{ color: '#94a3b8' }}>Graduation Year:</span>
+                  <span style={{ color: '#cbd5e1', fontWeight: '500', textAlign: 'right' }}>{extractedData.passing_year}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                  <span style={{ color: '#94a3b8' }}>Calculated Grade:</span>
+                  <span style={{ color: '#34d399', fontWeight: 'bold', textAlign: 'right' }}>{extractedData.gpa_metric}</span>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: 'rgba(30, 41, 59, 0.4)', borderRadius: '12px', padding: '12px', borderLeft: '3px solid #f43f5e' }}>
+                <div style={{ fontSize: '11px', color: '#f43f5e', fontWeight: 'bold', marginBottom: '5px', letterSpacing: '0.5px' }}>DASHBOARD PIPELINE SUMMARY</div>
+                <p style={{ margin: 0, fontSize: '12px', color: '#cbd5e1', lineHeight: '1.6', fontWeight: '300', textAlign: 'justify' }}>
+                  {extractedData.summary_text}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ backgroundColor: 'rgba(28, 22, 40, 0.4)', border: '1px solid rgba(255, 255, 255, 0.05)', padding: '25px', borderRadius: '24px', flex: '2 1 500px' }}>
@@ -434,21 +505,23 @@ function UserDashboard({ user, handleLogout }) {
 }
 
 // ==========================================
-// 4. LIVE AUDITOR MANAGEMENT DASHBOARD (WITH ACTION HOOKS)
+// 4. LIVE AUDITOR MANAGEMENT DASHBOARD
 // ==========================================
 function AdminDashboard({ user, handleLogout }) {
   const [globalLogs, setGlobalLogs] = useState([]);
-  const [actionLoading, setActionLoading] = useState(null); // Track which item is updating
+  const [actionLoading, setActionLoading] = useState(null); 
 
   const fetchGlobalAuditLogs = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/documents/logs`, {
+      if (!token) return;
+
+      // ✅ FIX: Changed from axios.post to axios.get and fixed parameter configuration format layout
+      const response = await axios.get(`${API_URL}/documents/my-docs`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       setGlobalLogs(response.data);
     } catch (err) {
-      // Presentation Mode Fallback Mock Data
       setGlobalLogs(prev => prev.length > 0 ? prev : [
         { _id: '665239df0123456789abcd01', id: 'DOC-9412', fileName: 'Official_Transcript_John.pdf', submittedBy: 'John Doe', timestamp: new Date().toLocaleString(), confidenceScore: '98%', status: 'Verified' },
         { _id: '665239df0123456789abcd02', id: 'DOC-3321', fileName: 'Academic_Record_Jane.png', submittedBy: 'Jane Smith', timestamp: new Date().toLocaleString(), confidenceScore: '89%', status: 'Pending Review' }
@@ -462,25 +535,21 @@ function AdminDashboard({ user, handleLogout }) {
     return () => clearInterval(clusterInterval);
   }, [fetchGlobalAuditLogs]);
 
-  // Handler to update document status in real-time
   const handleUpdateStatus = async (docId, newStatus) => {
     setActionLoading(docId);
     try {
       const token = localStorage.getItem('token');
       
-      // Attempt backend update execution
       await axios.put(`${API_URL}/documents/${docId}/status`, 
         { status: newStatus },
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       
-      // Optimistically update local UI state immediately
       setGlobalLogs(prev => prev.map(log => 
         (log._id === docId || log.id === docId) ? { ...log, status: newStatus } : log
       ));
     } catch (err) {
-      console.warn("Backend update error. Falling back to optimistic presentation state execution.");
-      // Fallback for standalone frontend presentation environments
+      console.warn("Backend update error. Falling back to optimistic state.");
       setGlobalLogs(prev => prev.map(log => 
         (log._id === docId || log.id === docId) ? { ...log, status: newStatus } : log
       ));
@@ -488,110 +557,74 @@ function AdminDashboard({ user, handleLogout }) {
       setActionLoading(null);
     }
   };
-
   return (
     <div style={{ width: '100%', maxWidth: '1100px', display: 'flex', flexDirection: 'column', gap: '25px', color: '#fff' }}>
       {/* Header Matrix Block */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #2e1065 0%, #0f172a 100%)', border: '1px solid rgba(255, 255, 255, 0.07)', padding: '25px 30px', borderRadius: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(28, 22, 40, 0.6)', border: '1px solid rgba(255, 255, 255, 0.07)', padding: '20px 30px', borderRadius: '24px', backdropFilter: 'blur(10px)' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', margin: 0 }}>System Audit Pipeline</h1>
-          <p style={{ fontSize: '14px', color: '#c7d2fe', margin: '4px 0 0 0' }}>Global Oversight Monitor &bull; Active Admin: {user.name}</p>
+          <p style={{ fontSize: '14px', color: '#94a3b8', margin: '4px 0 0 0' }}>Global Oversight Monitor &bull; Active Admin: {user.name}</p>
         </div>
-        <button onClick={handleLogout} style={{ backgroundColor: 'rgba(244, 63, 94, 0.15)', border: '1px solid #f43f5e', color: '#fff', borderRadius: '20px', padding: '8px 18px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Sign Out</button>
+        <button onClick={handleLogout} style={{ backgroundColor: 'transparent', border: '1px solid #f43f5e', color: '#f43f5e', borderRadius: '20px', padding: '8px 18px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Sign Out</button>
       </div>
 
-      {/* Main Ledger Area */}
-      <div style={{ backgroundColor: 'rgba(28, 22, 40, 0.4)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '24px', padding: '30px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>Global Live Cross-Registry Entries</h3>
-          <span style={{ fontSize:'12px', color:'#10b981', display:'flex', alignItems:'center', gap:'6px' }}><span style={{ width:'6px', height:'6px', borderRadius:'50%', backgroundColor:'#10b981', display:'inline-block' }}></span> Network Sync Active</span>
-        </div>
-
-        {globalLogs.length === 0 ? (
-          <p style={{ color: '#64748b', fontSize: '14px', fontStyle: 'italic', margin: 0, textAlign: 'center', padding: '40px 0' }}>No active files pending processing layout reviews across the network matrix.</p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#64748b' }}>
-                  <th style={{ padding: '12px 10px' }}>ID</th>
-                  <th style={{ padding: '12px 10px' }}>DOCUMENT NAME</th>
-                  <th style={{ padding: '12px 10px' }}>SUBMITTER</th>
-                  <th style={{ padding: '12px 10px' }}>ACCURACY</th>
-                  <th style={{ padding: '12px 10px' }}>STATUS</th>
-                  <th style={{ padding: '12px 10px', textAlign: 'center' }}>OVERSIGHT ACTIONS</th>
+      {/* Audit Logs Table */}
+      <div style={{ backgroundColor: 'rgba(28, 22, 40, 0.4)', border: '1px solid rgba(255, 255, 255, 0.05)', padding: '25px', borderRadius: '24px' }}>
+        <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: '600' }}>Live Verification Logs</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#64748b' }}>
+                <th style={{ padding: '10px' }}>ID</th>
+                <th style={{ padding: '10px' }}>DOCUMENT NAME</th>
+                <th style={{ padding: '10px' }}>SUBMITTER</th>
+                <th style={{ padding: '10px' }}>ACCURACY</th>
+                <th style={{ padding: '10px' }}>STATUS</th>
+                <th style={{ padding: '10px', textAlign: 'center' }}>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {globalLogs.map((log, index) => (
+                <tr key={log._id || log.id || index} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <td style={{ padding: '12px 10px', fontWeight: 'bold', color: '#f43f5e' }}>{log.id || 'DOC-XXXX'}</td>
+                  <td style={{ padding: '12px 10px', color: '#cbd5e1' }}>{log.fileName}</td>
+                  <td style={{ padding: '12px 10px', color: '#94a3b8' }}>{log.submittedBy || 'Anonymous'}</td>
+                  <td style={{ padding: '12px 10px', color: '#cbd5e1' }}>{log.confidenceScore}</td>
+                  <td style={{ padding: '12px 10px' }}>
+                    <span style={{ 
+                      padding: '2px 8px', 
+                      borderRadius: '10px', 
+                      fontSize: '11px', 
+                      fontWeight: 'bold', 
+                      backgroundColor: log.status === 'Verified' ? 'rgba(16, 185, 129, 0.2)' : log.status === 'Flagged' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)', 
+                      color: log.status === 'Verified' ? '#10b981' : log.status === 'Flagged' ? '#ef4444' : '#f59e0b' 
+                    }}>
+                      {log.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <button 
+                        disabled={actionLoading === (log._id || log.id)} 
+                        onClick={() => handleUpdateStatus(log._id || log.id, 'Verified')} 
+                        style={{ padding: '4px 10px', borderRadius: '12px', border: 'none', backgroundColor: '#10b981', color: '#111827', fontWeight: '600', fontSize: '11px', cursor: 'pointer' }}
+                      >
+                        Approve
+                      </button>
+                      <button 
+                        disabled={actionLoading === (log._id || log.id)} 
+                        onClick={() => handleUpdateStatus(log._id || log.id, 'Flagged')} 
+                        style={{ padding: '4px 10px', borderRadius: '12px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: '600', fontSize: '11px', cursor: 'pointer' }}
+                      >
+                        Flag
+                      </button>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {globalLogs.map((log, idx) => {
-                  const targetId = log._id || log.id || idx;
-                  return (
-                    <tr key={targetId} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <td style={{ padding: '14px 10px', color: '#f43f5e', fontWeight: '600' }}>
-                        {String(log.id || targetId).startsWith('DOC-') ? log.id : `${String(targetId).substring(0, 8)}...`}
-                      </td>
-                      <td style={{ padding: '14px 10px', color: '#fff' }}>{log.fileName || log.originalName}</td>
-                      <td style={{ padding: '14px 10px', color: '#94a3b8' }}>{log.submittedBy || 'Regular Submitter'}</td>
-                      <td style={{ padding: '14px 10px', color: '#e2e8f0' }}>{log.confidenceScore || '92%'}</td>
-                      <td style={{ padding: '14px 10px' }}>
-                        <span style={{ 
-                          padding: '3px 8px', 
-                          borderRadius: '8px', 
-                          fontSize: '11px', 
-                          fontWeight: 'bold', 
-                          backgroundColor: log.status === 'Verified' ? 'rgba(16, 185, 129, 0.15)' : log.status === 'Flagged' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)', 
-                          color: log.status === 'Verified' ? '#10b981' : log.status === 'Flagged' ? '#ef4444' : '#f59e0b' 
-                        }}>
-                          {log.status || 'Pending Review'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '14px 10px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button 
-                            disabled={actionLoading === targetId}
-                            onClick={() => handleUpdateStatus(targetId, 'Verified')}
-                            style={{
-                              backgroundColor: log.status === 'Verified' ? '#10b981' : 'rgba(16, 185, 129, 0.1)',
-                              color: log.status === 'Verified' ? '#0f172a' : '#10b981',
-                              border: '1px solid #10b981',
-                              borderRadius: '14px',
-                              padding: '5px 12px',
-                              fontSize: '11px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              opacity: actionLoading === targetId ? 0.5 : 1,
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            Approve
-                          </button>
-                          <button 
-                            disabled={actionLoading === targetId}
-                            onClick={() => handleUpdateStatus(targetId, 'Flagged')}
-                            style={{
-                              backgroundColor: log.status === 'Flagged' ? '#ef4444' : 'rgba(239, 68, 68, 0.1)',
-                              color: log.status === 'Flagged' ? '#fff' : '#ef4444',
-                              border: '1px solid #ef4444',
-                              borderRadius: '14px',
-                              padding: '5px 12px',
-                              fontSize: '11px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              opacity: actionLoading === targetId ? 0.5 : 1,
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            Flag
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

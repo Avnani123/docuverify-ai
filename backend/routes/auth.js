@@ -1,66 +1,33 @@
-// backend/routes/auth.js
+const jwt = require('jsonwebtoken');
 
-const express = require('express');
-const router = express.Router();
-const User = require('../models/User');
-
-// REGISTER ROUTER - FAULT TOLERANT
-router.post('/register', async (req, res) => {
-  console.log("📥 Registration Request Payload Received:", req.body);
-  
+const authMiddleware = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
-
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: "Missing required fields." });
+    // 1. Extract token from the Authorization Header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'Authentication failed: Missing token header.' });
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    const token = authHeader.split(' ')[1];
 
-    // 1. Try connecting to the MongoDB collection model gracefully
-    try {
-      const existingUser = await User.findOne({ email: cleanEmail });
-      if (existingUser) {
-        return res.status(400).json({ message: "This email address is already registered." });
-      }
+    // 2. Verify token with your environment secret
+    // Use your exact JWT secret variable (e.g., process.env.JWT_SECRET)
+    const decodedToken = jwt.verify(token, process.env.JWT_SECRET || 'your_fallback_secret');
 
-      const newUser = new User({
-        name: name.trim(),
-        email: cleanEmail,
-        password: password, // Note: if password validation fails on length, the catch block handles it below
-        role: role || 'user'
-      });
+    // 3. Attach the decrypted user identity fields securely to the request pipeline
+    req.user = {
+      id: decodedToken.id || decodedToken.userId,
+      email: decodedToken.email
+    };
 
-      await newUser.save();
-      console.log("💾 Successfully saved user to database cluster!");
-
-      return res.status(201).json({
-        message: "User account created successfully!",
-        token: "session-jwt-token-string",
-        user: { id: newUser._id, name: newUser.name, email: newUser.email, role: newUser.role }
-      });
-
-    } catch (dbError) {
-      console.error("⚠️ Schema/Validation Error, dropping back to direct fallback session:", dbError.message);
-      
-      // 2. Fallback bypass mechanism: If your Mongoose model has strict rules or fails validation, 
-      // we pass the user through dynamically so your hackathon presentation doesn't break!
-      return res.status(201).json({
-        message: "User registered successfully (Local Session Mode).",
-        token: "session-jwt-token-string",
-        user: {
-          id: "usr_" + Math.random().toString(36).substr(2, 9),
-          name: name.trim(),
-          email: cleanEmail,
-          role: role || 'user'
-        }
-      });
-    }
-
-  } catch (error) {
-    console.error("Critical Registration route exception:", error);
-    res.status(500).json({ message: error.message || "An error occurred during registration." });
+    next();
+  } catch (err) {
+    console.error('JWT Signature Matching Aborted:', err.message);
+    return res.status(401).json({ 
+      message: 'Token encryption signature authentication tracking failed.',
+      error: err.message 
+    });
   }
-});
+};
 
-module.exports = router;
+module.exports = authMiddleware;
