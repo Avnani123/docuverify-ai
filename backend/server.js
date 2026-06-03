@@ -111,12 +111,6 @@ function getMimeType(fileExtension) {
   }
 }
 
-// Helper to cycle names so your UI looks dynamic even while offline/limited
-function getRandomFallbackName() {
-  const names = ["Avani Singh", "Aarav Sharma", "Diya Malhotra", "Rohan Verma", "Isha Gupta"];
-  return names[Math.floor(Math.random() * names.length)];
-}
-
 // ==========================================
 // 3. AUTHENTICATION API ROUTES
 // ==========================================
@@ -210,11 +204,14 @@ app.get(['/api/documents/my-docs', '/api/documents/logs', '/documents/my-docs'],
         linkedUser = await User.findById(doc.userId).select('name');
       }
 
+      // Explicitly pull authentic Account Username or dynamic fallback context owner name
+      const targetSubmitterProfileName = linkedUser ? linkedUser.name : "Avani";
+
       let baseFallback = {
         document_type: "Official Academic Transcript",
         doc_classification: "Official Academic Transcript",
-        extracted_name: linkedUser ? linkedUser.name : "Avani Singh",
-        student_name: linkedUser ? linkedUser.name : "Avani Singh",
+        extracted_name: "Avani Singh",
+        student_name: "Avani Singh",
         institution: "Global Institute of Technology & Management",
         issuing_entity: "Global Institute of Technology & Management",
         passing_year: "2026",
@@ -264,7 +261,7 @@ app.get(['/api/documents/my-docs', '/api/documents/logs', '/documents/my-docs'],
         _id: doc._id,
         fileName: doc.originalName || doc.fileName,
         status: doc.status || 'Pending', 
-        submittedBy: linkedUser ? linkedUser.name : (combinedData.student_name || "Avani Singh"),
+        submittedBy: targetSubmitterProfileName, 
         confidenceScore: doc.confidenceScore || '95%',
         timestamp: doc.timestamp ? new Date(doc.timestamp).toLocaleString() : new Date().toLocaleString(),
         extractedData: combinedData,
@@ -325,13 +322,11 @@ app.post(['/api/documents/upload', '/api/documents/my-docs', '/documents/my-docs
       }
     `;
 
-    // Generate dynamic fallback fields so layout lists look filled and beautiful
-    const fallbackStudent = getRandomFallbackName();
     let baseFallback = {
       document_type: "Official Academic Transcript",
       doc_classification: "Official Academic Transcript",
-      extracted_name: fallbackStudent,
-      student_name: fallbackStudent,
+      extracted_name: "Avani Singh",
+      student_name: "Avani Singh",
       institution: "Global Institute of Technology & Management",
       issuing_entity: "Global Institute of Technology & Management",
       passing_year: "2026",
@@ -359,13 +354,12 @@ app.post(['/api/documents/upload', '/api/documents/my-docs', '/documents/my-docs
     if (fileExtension === '.pdf') {
       try {
         const dataBuffer = fs.readFileSync(filePath);
-        // Clean text parser execution with an isolated catch to stop font exceptions from interrupting execution
         const parsedPdf = await pdfParse(dataBuffer).catch(() => ({ text: '' }));
         
         if (parsedPdf && parsedPdf.text && parsedPdf.text.trim().length > 10) {
           modelPayload = [
             { text: basePrompt },
-            { text: `Raw Text Contents:\n\"\"\"\n${parsedPdf.text}\n\"\"\"` }
+            { text: `Raw Text Contents:\n\"\"\"\n${parsedPdf.text}\n\"\"筋` }
           ];
         } else {
           const base64Data = fs.readFileSync(filePath).toString("base64");
@@ -389,7 +383,6 @@ app.post(['/api/documents/upload', '/api/documents/my-docs', '/documents/my-docs
       ];
     }
 
-    // Attempt GenAI content production
     try {
       const aiResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -437,6 +430,15 @@ app.post(['/api/documents/upload', '/api/documents/my-docs', '/documents/my-docs
 
     const savedDoc = await newDocument.save();
     
+    // Explicitly calculate true dynamic account username for the response payload
+    let currentAccountProfileName = "Avani";
+    if (req.user && req.user.id) {
+      const databaseUserRecord = await User.findById(req.user.id).select('name');
+      if (databaseUserRecord) {
+         currentAccountProfileName = databaseUserRecord.name;
+      }
+    }
+    
     return res.status(201).json({
       message: 'Document uploaded successfully!',
       document: {
@@ -444,7 +446,7 @@ app.post(['/api/documents/upload', '/api/documents/my-docs', '/documents/my-docs
         _id: savedDoc._id,
         fileName: savedDoc.originalName || savedDoc.fileName,
         status: savedDoc.status || 'Pending',
-        submittedBy: combinedData.student_name || "Avani Singh",
+        submittedBy: currentAccountProfileName, 
         confidenceScore: savedDoc.confidenceScore || '95%',
         timestamp: new Date().toLocaleString(),
         extractedData: combinedData
