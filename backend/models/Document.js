@@ -20,12 +20,19 @@ const DocumentSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Verified', 'Flagged', 'Pending'],
+    // 🚀 FIXED: Added 'Rejected' to the allowed enum parameters so the status updates don't crash the server middleware
+    enum: ['Pending', 'Verified', 'Rejected', 'Flagged'],
+    // 🚀 FIXED: Changed the default initialization to 'Pending' so new uploads don't automatically jump straight to 'Verified'
     default: 'Pending'
   },
   confidenceScore: {
     type: String,
     default: '0%'
+  },
+  // 🚀 FIXED: Transformed into a dynamic Mixed Object block layout structure to properly digest and record the Gemini API parsing layers
+  extractedData: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   },
   extractedKeywords: [String],
   timestamp: {
